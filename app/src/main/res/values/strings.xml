@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">IsolateBox</string>
+    <string name="app_tagline">بيئة تشغيل معزولة وجدار حماية محلي للتطبيقات</string>
+    <string name="dashboard_title">البيئة المعزولة</string>
+    <string name="status_active">نشط ومؤمن</string>
+    <string name="status_inactive">معطل</string>
+    <string name="firewall_label">جدار الحماية المحلي</string>
+    <string name="shizuku_label">خدمة Shizuku</string>
+    <string name="shizuku_connected">متصل وجاهز</string>
+    <string name="shizuku_disconnected">غير متصل (وضع محدود)</string>
+    <string name="shizuku_req_perm">بانتظار الإذن</string>
+    <string name="work_profile_label">ملف العمل المعزول</string>
+    <string name="add_app">إضافة تطبيق للبيئة</string>
+    <string name="launch_app">تشغيل في البيئة المعزولة</string>
+    <string name="stop_app">إيقاف التطبيق فورياً</string>
+    <string name="app_settings">إعدادات العزل</string>
+    <string name="security_test">معمل الفحص والأمان</string>
+    <string name="vault_title">الخزنة المشفرة</string>
+    <string name="no_apps_added">لم تتم إضافة أي تطبيق إلى البيئة بعد</string>
+    <string name="search_apps">البحث في التطبيقات…</string>
+    <string name="network_isolation">عزل الشبكة والإنترنت</string>
+    <string name="file_isolation">عزل الملفات والتخزين</string>
+    <string name="permission_isolation">عزل الصلاحيات الحساسة</string>
+    <string name="vpn_prompt">IsolateBox يتطلب تشغيل خدمة VpnService المحلية لحجب اتصالات التطبيق المعزول بدون إرسال بياناتك لخوادم خارجية.</string>
+</resources>

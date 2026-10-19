@@ -1,0 +1,6 @@
+{
+  "name": "IsolateBox",
+  "description": "بيئة تشغيل معزولة للتطبيقات مع جدار حماية محلي وتكامل Shizuku",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
