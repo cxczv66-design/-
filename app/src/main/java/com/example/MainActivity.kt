@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
+import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -12,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -24,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.firewall.FirewallController
 import com.example.model.SandboxedApp
+import com.example.overlay.FloatingPanelService
 import com.example.ui.AddAppBottomSheet
 import com.example.ui.AppSettingsScreen
 import com.example.ui.DashboardScreen
@@ -94,6 +98,41 @@ class MainActivity : ComponentActivity() {
                         val message = if (result.resultCode == Activity.RESULT_OK) "عاد معالج Android لكن لم يظهر ملف مُدار؛ تحقق من إعداد الجهاز." else "لم يكتمل إعداد ملف العمل. لا تُشغّل التطبيقات من النسخة الشخصية بوصفها معزولة."
                         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                     }
+                }
+
+                val overlayPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) {
+                    if (Settings.canDrawOverlays(this)) {
+                        ContextCompat.startForegroundService(
+                            this,
+                            Intent(this, FloatingPanelService::class.java).setAction(FloatingPanelService.ACTION_SHOW)
+                        )
+                    } else {
+                        Toast.makeText(this, "لم يُمنح إذن الظهور فوق التطبيقات؛ لم تبدأ اللوحة.", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                fun showFloatingDemoPanel() {
+                    if (Settings.canDrawOverlays(this)) {
+                        ContextCompat.startForegroundService(
+                            this,
+                            Intent(this, FloatingPanelService::class.java).setAction(FloatingPanelService.ACTION_SHOW)
+                        )
+                    } else {
+                        overlayPermissionLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    }
+                }
+
+                fun stopFloatingDemoPanel() {
+                    startService(
+                        Intent(this, FloatingPanelService::class.java).setAction(FloatingPanelService.ACTION_STOP)
+                    )
                 }
 
                 fun launchTarget(app: SandboxedApp) {
@@ -178,6 +217,8 @@ class MainActivity : ComponentActivity() {
                                     Toast.LENGTH_LONG
                                 ).show()
                             },
+                            onShowFloatingPanel = { showFloatingDemoPanel() },
+                            onStopFloatingPanel = { stopFloatingDemoPanel() },
                             modifier = Modifier.padding(innerPadding)
                         )
 

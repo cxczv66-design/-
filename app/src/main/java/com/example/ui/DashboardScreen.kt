@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FolderShared
@@ -83,6 +84,8 @@ fun DashboardScreen(
     onDiagnosticsClick: (SandboxedApp) -> Unit,
     onOpenVaultClick: () -> Unit,
     onSetupWorkProfile: () -> Unit,
+    onShowFloatingPanel: () -> Unit,
+    onStopFloatingPanel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -344,6 +347,56 @@ fun DashboardScreen(
                                     color = if (workProfileStatus.hasWorkProfile) CyberAmber else CyberBlue
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            item {
+                CyberCard(borderColor = CyberCyan.copy(alpha = 0.45f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(CyberCyan.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Apps, contentDescription = null, tint = CyberCyan)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "لوحة عائمة تجريبية",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "فقاعة قابلة للسحب ومظهر متحرك فوق التطبيقات. الأزرار شكلية فقط؛ لا تتحكم بلعبة ولا تقرأ ذاكرتها.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onShowFloatingPanel,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyanDark),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("floating_panel_button")
+                        ) {
+                            Text("إظهار اللوحة", color = Color.White)
+                        }
+                        OutlinedButton(
+                            onClick = onStopFloatingPanel,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("floating_panel_stop_button")
+                        ) {
+                            Text("إيقاف")
                         }
                     }
                 }
