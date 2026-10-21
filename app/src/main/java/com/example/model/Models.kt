@@ -114,12 +114,12 @@ data class DiscoveredTracker(
     val name: String,
     val category: String, // "تحليلات سلوكية", "إعلانات وتتبع", "بصمة الجهاز"
     val signature: String,
-    val isNeutralized: Boolean = true
+    val isNeutralized: Boolean = false // A manifest pattern match does not prove neutralization.
 )
 
 data class IntrusionReport(
-    val score: Int, // 0 - 100
-    val level: String, // "منخفض", "متوسط", "شديد التطفل"
+    val score: Int, // Heuristic display index 0-100; not a probability or security verdict.
+    val level: String, // Summary of known component-name patterns only.
     val totalTrackersFound: Int,
     val trackers: List<DiscoveredTracker>
 )

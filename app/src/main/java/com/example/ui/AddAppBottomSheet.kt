@@ -80,13 +80,13 @@ fun AddAppBottomSheet(
             ) {
                 Column {
                     Text(
-                        text = "إضافة تطبيق إلى البيئة المعزولة",
+                        text = "إضافة نسخة من ملف العمل الحالي",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan
                     )
                     Text(
-                        text = "حدد تطبيقاً لتطبيق قواعد جدار الحماية وعزل الصلاحيات",
+                        text = "تعرض هذه القائمة التطبيقات المثبتة في ملف العمل فقط",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -181,9 +181,9 @@ fun InstalledAppItemRow(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val (color, label) = when (app.compatibilityRating) {
-                        CompatibilityRating.EXCELLENT -> CyberEmerald to "توافق مثالي"
-                        CompatibilityRating.GOOD -> CyberCyan to "متوافق"
-                        CompatibilityRating.LIMITED -> CyberAmber to "نظامي مقيد"
+                        CompatibilityRating.EXCELLENT -> CyberEmerald to "لا أذونات محددة"
+                        CompatibilityRating.GOOD -> CyberCyan to "أذونات حساسة"
+                        CompatibilityRating.LIMITED -> CyberAmber to "حزمة نظام"
                     }
                     NeonStatusChip(text = label, color = color)
                     Spacer(modifier = Modifier.width(6.dp))
@@ -193,6 +193,13 @@ fun InstalledAppItemRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Text(
+                    text = app.compatibilityNotice,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             if (app.isAlreadySandboxed) {
@@ -214,6 +221,14 @@ fun InstalledAppItemRow(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            } else if (app.isSystemApp) {
+                Text(
+                    text = "غير مدعوم",
+                    color = CyberAmber,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             } else {
                 Button(
                     onClick = onAdd,

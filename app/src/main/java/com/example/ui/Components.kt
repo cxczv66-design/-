@@ -179,6 +179,8 @@ fun NeonStatusChip(
 fun ActiveSessionBanner(
     session: SandboxSession,
     totalBlocked: Long,
+    vpnActive: Boolean,
+    lockdownActive: Boolean,
     onStopClick: () -> Unit
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -219,7 +221,7 @@ fun ActiveSessionBanner(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "جلسة عزل نشطة قيد التشغيل",
+                        text = "جلسة إطلاق مسجلة في IsolateBox",
                         style = MaterialTheme.typography.titleMedium,
                         color = CyberCyan,
                         fontWeight = FontWeight.Bold
@@ -227,8 +229,12 @@ fun ActiveSessionBanner(
                 }
 
                 NeonStatusChip(
-                    text = "الحماية فعالة",
-                    color = CyberEmerald
+                    text = when {
+                        vpnActive && lockdownActive -> "VPN + lockdown نشطان"
+                        vpnActive -> "VPN نشط دون lockdown"
+                        else -> "VPN غير نشط"
+                    },
+                    color = if (vpnActive && lockdownActive) CyberEmerald else CyberAmber
                 )
             }
 
@@ -277,7 +283,7 @@ fun ActiveSessionBanner(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "حزم الشبكة المحجوبة:",
+                        text = "إجمالي حزم TUN التي رصدها IsolateBox:",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White
                     )
@@ -306,7 +312,7 @@ fun ActiveSessionBanner(
                 Icon(imageVector = Icons.Default.StopCircle, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "إيقاف التطبيق فورياً وإنهاء العزل",
+                    text = "تعليق التطبيق عبر ملف العمل وإنهاء الجلسة",
                     fontWeight = FontWeight.Bold
                 )
             }

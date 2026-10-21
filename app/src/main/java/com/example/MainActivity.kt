@@ -32,16 +32,11 @@ import com.example.ui.IsolateBoxViewModel
 import com.example.ui.PipelineExecutionDialog
 import com.example.ui.VaultScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.workprofile.WorkProfileHelper
 
-enum class Screen {
-    DASHBOARD,
-    APP_SETTINGS,
-    DIAGNOSTICS,
-    VAULT
-}
+private enum class Screen { DASHBOARD, APP_SETTINGS, DIAGNOSTICS, VAULT }
 
 class MainActivity : ComponentActivity() {
-
     private val viewModel: IsolateBoxViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +47,7 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 var currentScreen by remember { mutableStateOf(Screen.DASHBOARD) }
                 var showAddSheet by remember { mutableStateOf(false) }
+                var pendingLaunch by remember { mutableStateOf<SandboxedApp?>(null) }
 
                 val sandboxedApps by viewModel.sandboxedApps.collectAsState()
                 val activeSession by viewModel.activeSession.collectAsState()
@@ -69,107 +65,137 @@ class MainActivity : ComponentActivity() {
                 val intrusionReport by viewModel.intrusionReport.collectAsState()
                 val selectedApp by viewModel.selectedApp.collectAsState()
 
-                // Launcher for VpnService preparation dialog
                 val vpnLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { result ->
+                    val target = pendingLaunch
+                    pendingLaunch = null
                     if (result.resultCode == Activity.RESULT_OK) {
                         FirewallController.startFirewall(this)
-                        Toast.makeText(this, "تم تفعيل جدار الحماية بنجاح", Toast.LENGTH_SHORT).show()
+                        if (target != null) viewModel.launchAppInSandbox(target)
+                        else Toast.makeText(this, "بدأت محاولة تشغيل VPN المحلي", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(this, "يلزم إذن VPN لحجب الاتصالات", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "لم يُمنح إذن VPN؛ لم يتم تشغيل التطبيق المستهدف", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                val profileProvisioningLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    viewModel.refreshWorkProfileStatus()
+                    val profileExists = WorkProfileHelper.getWorkProfileStatus(this).hasWorkProfile
+                    if (profileExists) {
+                        Toast.makeText(
+                            this,
+                            "أُنشئ ملف العمل. افتح نسخة IsolateBox ذات رمز الحقيبة من مشغل التطبيقات، وثبّت التطبيقات المختارة داخل الملف.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        val message = if (result.resultCode == Activity.RESULT_OK) "عاد معالج Android لكن لم يظهر ملف مُدار؛ تحقق من إعداد الجهاز." else "لم يكتمل إعداد ملف العمل. لا تُشغّل التطبيقات من النسخة الشخصية بوصفها معزولة."
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                fun launchTarget(app: SandboxedApp) {
+                    if (!WorkProfileHelper.isCurrentProfileOwner(this)) {
+                        Toast.makeText(
+                            this,
+                            "هذه النسخة ليست مالك ملف العمل. أنشئ الملف وافتح نسخة IsolateBox ذات رمز الحقيبة قبل إضافة/تشغيل التطبيقات.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return
+                    }
+                    val prepareIntent: Intent? = VpnService.prepare(this)
+                    if (prepareIntent != null) {
+                        pendingLaunch = app
+                        vpnLauncher.launch(prepareIntent)
+                    } else {
+                        viewModel.launchAppInSandbox(app)
                     }
                 }
 
                 fun checkAndStartFirewall() {
-                    val prepareIntent = FirewallController.getPrepareIntent(this)
-                    if (prepareIntent != null) {
-                        vpnLauncher.launch(prepareIntent)
-                    } else {
+                    if (firewallActive) {
+                        if (WorkProfileHelper.isCurrentProfileOwner(this)) {
+                            Toast.makeText(this, "VPN دائم ويديره DPC؛ لا يمكن إيقافه من لوحة التطبيق.", Toast.LENGTH_LONG).show()
+                            return
+                        }
                         viewModel.toggleFirewall()
+                        return
                     }
+                    if (WorkProfileHelper.isCurrentProfileOwner(this) && WorkProfileHelper.isLockdownEnabled(this)) {
+                        Toast.makeText(this, "قفل المرور مُدار من ملف العمل؛ شغّل الهدف عبر خط العزل لإعادة إعداد TUN.", Toast.LENGTH_LONG).show()
+                        return
+                    }
+                    val prepareIntent = FirewallController.getPrepareIntent(this)
+                    if (prepareIntent != null) vpnLauncher.launch(prepareIntent)
+                    else viewModel.toggleFirewall()
                 }
 
-                // Handle system back navigation
                 if (currentScreen != Screen.DASHBOARD) {
-                    BackHandler {
-                        currentScreen = Screen.DASHBOARD
-                    }
+                    BackHandler { currentScreen = Screen.DASHBOARD }
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     when (currentScreen) {
-                        Screen.DASHBOARD -> {
-                            DashboardScreen(
-                                sandboxedApps = sandboxedApps,
-                                activeSession = activeSession,
-                                firewallActive = firewallActive,
-                                totalBlockedPackets = totalBlocked,
-                                shizukuState = shizukuState,
-                                workProfileStatus = workProfileStatus,
-                                onToggleFirewall = { checkAndStartFirewall() },
-                                onRequestShizuku = { viewModel.requestShizukuPermission() },
-                                onAddAppClick = {
+                        Screen.DASHBOARD -> DashboardScreen(
+                            sandboxedApps = sandboxedApps,
+                            activeSession = activeSession,
+                            firewallActive = firewallActive,
+                            totalBlockedPackets = totalBlocked,
+                            shizukuState = shizukuState,
+                            workProfileStatus = workProfileStatus,
+                            onToggleFirewall = { checkAndStartFirewall() },
+                            onRequestShizuku = { viewModel.requestShizukuPermission() },
+                            onAddAppClick = {
+                                if (!WorkProfileHelper.isCurrentProfileOwner(this)) {
+                                    Toast.makeText(this, "افتح نسخة IsolateBox داخل ملف العمل أولًا؛ لا تُضاف تطبيقات الملف الشخصي إلى حاوية افتراضية.", Toast.LENGTH_LONG).show()
+                                } else {
                                     viewModel.loadInstalledApps()
                                     showAddSheet = true
-                                },
-                                onLaunchApp = { app ->
-                                    val prepIntent = FirewallController.getPrepareIntent(this)
-                                    if (prepIntent != null) {
-                                        vpnLauncher.launch(prepIntent)
-                                    } else {
-                                        viewModel.launchAppInSandbox(app)
-                                    }
-                                },
-                                onStopApp = { pkg -> viewModel.stopApp(pkg) },
-                                onSettingsClick = { app ->
-                                    viewModel.selectApp(app)
-                                    viewModel.runTrackerAnalysis(app.packageName)
-                                    currentScreen = Screen.APP_SETTINGS
-                                },
-                                onDiagnosticsClick = { app ->
-                                    viewModel.selectApp(app)
-                                    viewModel.runDiagnostics(app.packageName)
-                                    viewModel.runTrackerAnalysis(app.packageName)
-                                    currentScreen = Screen.DIAGNOSTICS
-                                },
-                                onOpenVaultClick = {
-                                    currentScreen = Screen.VAULT
-                                },
-                                modifier = Modifier.padding(innerPadding)
-                            )
-                        }
+                                }
+                            },
+                            onLaunchApp = { app -> launchTarget(app) },
+                            onStopApp = { pkg -> viewModel.stopApp(pkg) },
+                            onSettingsClick = { app ->
+                                viewModel.selectApp(app)
+                                viewModel.runTrackerAnalysis(app.packageName)
+                                currentScreen = Screen.APP_SETTINGS
+                            },
+                            onDiagnosticsClick = { app ->
+                                viewModel.selectApp(app)
+                                viewModel.runDiagnostics(app.packageName)
+                                viewModel.runTrackerAnalysis(app.packageName)
+                                currentScreen = Screen.DIAGNOSTICS
+                            },
+                            onOpenVaultClick = { currentScreen = Screen.VAULT },
+                            onSetupWorkProfile = {
+                                val intent = WorkProfileHelper.createProvisioningIntent(this)
+                                if (intent != null) profileProvisioningLauncher.launch(intent)
+                                else Toast.makeText(
+                                    this,
+                                    "تعذر بدء التوفير: الجهاز لا يدعم ملفًا مُدارًا أو يوجد ملف عمل قائم. لن يُستبدل الملف القائم تلقائيًا.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            modifier = Modifier.padding(innerPadding)
+                        )
 
                         Screen.APP_SETTINGS -> {
                             val target = selectedApp
                             if (target != null) {
                                 AppSettingsScreen(
                                     app = target,
-                                    onUpdateApp = { updated -> viewModel.updateAppSettings(updated) },
-                                    onDeleteApp = { del -> viewModel.removeAppFromSandbox(del) },
-                                    onLaunchApp = { appToLaunch ->
-                                        val prepIntent = FirewallController.getPrepareIntent(this)
-                                        if (prepIntent != null) {
-                                            vpnLauncher.launch(prepIntent)
-                                        } else {
-                                            viewModel.launchAppInSandbox(appToLaunch)
-                                        }
-                                    },
-                                    onDiagnosticsClick = { appToTest ->
-                                        viewModel.runDiagnostics(appToTest.packageName)
-                                        viewModel.runTrackerAnalysis(appToTest.packageName)
+                                    onDeleteApp = { app -> viewModel.removeAppFromSandbox(app) },
+                                    onLaunchApp = { app -> launchTarget(app) },
+                                    onDiagnosticsClick = { app ->
+                                        viewModel.runDiagnostics(app.packageName)
+                                        viewModel.runTrackerAnalysis(app.packageName)
                                         currentScreen = Screen.DIAGNOSTICS
-                                    },
-                                    onToggleFreeze = { appToFreeze -> viewModel.toggleFreeze(appToFreeze) },
-                                    onPanicWipe = { pkgToWipe ->
-                                        viewModel.panicWipe(pkgToWipe)
-                                        Toast.makeText(this, "تم تنفيذ التطهير الفوري وتجميد الحزمة", Toast.LENGTH_LONG).show()
                                     },
                                     onBack = { currentScreen = Screen.DASHBOARD }
                                 )
-                            } else {
-                                currentScreen = Screen.DASHBOARD
-                            }
+                            } else currentScreen = Screen.DASHBOARD
                         }
 
                         Screen.DIAGNOSTICS -> {
@@ -187,18 +213,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        Screen.VAULT -> {
-                            VaultScreen(
-                                vaultItems = vaultItems,
-                                onSaveSecret = { name, content -> viewModel.saveVaultSecret(name, content) },
-                                onDeleteSecret = { name -> viewModel.deleteVaultItem(name) },
-                                onReadSecret = { name -> viewModel.readVaultItem(name) },
-                                onBack = { currentScreen = Screen.DASHBOARD }
-                            )
-                        }
+                        Screen.VAULT -> VaultScreen(
+                            vaultItems = vaultItems,
+                            onSaveSecret = { name, content -> viewModel.saveVaultSecret(name, content) },
+                            onDeleteSecret = { name -> viewModel.deleteVaultItem(name) },
+                            onReadSecret = { name -> viewModel.readVaultItem(name) },
+                            onBack = { currentScreen = Screen.DASHBOARD }
+                        )
                     }
 
-                    // Add App Bottom Sheet
                     if (showAddSheet) {
                         AddAppBottomSheet(
                             installedApps = filteredInstalledApps,
@@ -212,7 +235,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // Pre-flight execution pipeline dialog
                     PipelineExecutionDialog(
                         status = pipelineStatus,
                         onDismiss = { viewModel.resetPipelineStatus() }
@@ -220,5 +242,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshWorkProfileStatus()
     }
 }

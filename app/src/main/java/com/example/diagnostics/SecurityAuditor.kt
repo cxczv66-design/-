@@ -6,54 +6,64 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.example.firewall.IsolateVpnService
 import com.example.model.SecurityTestResult
+import com.example.workprofile.WorkProfileHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
 
 class SecurityAuditor(private val context: Context) {
 
-    /**
-     * Tests whether the local VPN firewall is active and whether DNS/Network drop is engaged.
-     */
+    /** Checks live Android policy state and only reports packet evidence actually observed by TUN. */
     suspend fun runNetworkBlockadeTest(packageName: String): SecurityTestResult = withContext(Dispatchers.IO) {
         val isVpnActive = IsolateVpnService.isRunning.value
-        val isPackageBlocked = IsolateVpnService.activeBlockedPackages.value.contains(packageName)
+        val blockedPackages = IsolateVpnService.activeBlockedPackages.value
+        val lockdown = WorkProfileHelper.isLockdownEnabled(context)
+
+        if (!WorkProfileHelper.isCurrentProfileOwner(context) || !lockdown) {
+            return@withContext SecurityTestResult(
+                testName = "فحص VPN الدائم وملف العمل",
+                description = "التحقق من امتلاك ملف العمل وقفل المرور الذي يمنع تجاوز VPN",
+                isPassed = false,
+                resultDetails = "لم يتم تأكيد ملكية ملف العمل و/أو VPN دائم مع lockdown. لا تعتبر النسخة الشخصية معزولة، ولم يُشغّل التطبيق المستهدف."
+            )
+        }
 
         if (!isVpnActive) {
             return@withContext SecurityTestResult(
-                testName = "فحص جدار الحماية وعزل الشبكة",
-                description = "التحقق من حالة اعتراض وحجب الحزم عبر VpnService",
+                testName = "فحص واجهة VPN المحلية",
+                description = "التحقق من نشاط TUN قبل تشغيل التطبيق",
                 isPassed = false,
-                resultDetails = "جدار الحماية المحلي معطل حالياً. التطبيق المستهدف قد يتمكن من الاتصال بالإنترنت ما لم يتم تشغيل VpnService."
+                resultDetails = "VPN غير نشط؛ lockdown يمنع المرور غير المحمي إذا ظل مضبوطًا في النظام، لكن لا يمكن تشغيل الهدف قبل تأكيد واجهة TUN."
             )
         }
 
-        if (!isPackageBlocked) {
+        if (packageName !in blockedPackages) {
             return@withContext SecurityTestResult(
-                testName = "فحص إدراج التطبيق في قائمة العزل",
-                description = "التحقق من توجيه حزم التطبيق حصراً إلى النفق المعزول",
+                testName = "فحص قائمة تطبيقات VPN",
+                description = "التحقق من إدراج التطبيق في قائمة TUN قبل الإطلاق",
                 isPassed = false,
-                resultDetails = "جدار الحماية نشط، ولكن الحزمة $packageName غير مدرجة في قائمة التطبيقات المحجوبة!"
+                resultDetails = "الحزمة $packageName ليست ضمن قائمة الحزم الموجهة إلى TUN؛ لم تُعلن حمايتها."
             )
         }
 
-        // Run a simulated network probe to check local sink
-        var probeError: String? = null
-        try {
-            val socket = Socket()
-            socket.connect(InetSocketAddress("8.8.8.8", 53), 1500)
-            socket.close()
-        } catch (e: Exception) {
-            probeError = e.message
+        val observedPackets = IsolateVpnService.totalBlocked.value
+        if (observedPackets == 0L) {
+            return@withContext SecurityTestResult(
+                testName = "فحص إعداد الحجب المحلي",
+                description = "فحص الإعداد فقط؛ لم يُجرَ اتصال تجريبي من عملية التطبيق المستهدف",
+                isPassed = false,
+                resultDetails = "الإعدادات النشطة صحيحة، لكن لم تُرصد حزم TUN بعد. افتح التطبيق داخل ملف العمل وحاول تنفيذ طلب شبكة، ثم أعد الفحص."
+            )
         }
 
         SecurityTestResult(
-            testName = "فحص حجب اتصالات IPv4/IPv6 وDNS",
-            description = "محاكاة توجيه الحزم والتأكد من إغراقها (Drop Sink) دون تسرب للخارج",
+            testName = "فحص إسقاط حزم TUN المرصودة",
+            description = "دليل عددي من واجهة VPN المحلية؛ ليس فحصًا لمحتوى التطبيق أو لكل حزمة على الجهاز",
             isPassed = true,
-            resultDetails = "نجاح: جدار الحماية نشط على الحزمة $packageName. الحزم الصادرة يتم توجيهها لـ TUN interface وإتلافها فورياً لمنع أي تسرب بيانات."
+            resultDetails = if (blockedPackages.size == 1) {
+                "قرأ عامل TUN وأسقط $observedPackets حزمة فعلية منذ تشغيل الخدمة، وقائمة VPN تتضمن الهدف وحده. لا يسجل هذا محتوى HTTPS أو هوية العملية داخل الحزمة."
+            } else {
+                "قرأ عامل TUN وأسقط $observedPackets حزمة فعلية إجمالًا. توجد ${blockedPackages.size} حزم تطبيقات في قائمة VPN؛ لا ينسب Android هذه الحزم إلى تطبيق بعينه في واجهة VpnService."
+            }
         )
     }
 
@@ -61,17 +71,6 @@ class SecurityAuditor(private val context: Context) {
      * Audits granted sensitive permissions for a target app.
      */
     suspend fun runPermissionAudit(packageName: String): SecurityTestResult = withContext(Dispatchers.IO) {
-        val dangerousPermissions = listOf(
-            "android.permission.READ_MEDIA_IMAGES",
-            "android.permission.READ_MEDIA_VIDEO",
-            "android.permission.READ_MEDIA_AUDIO",
-            "android.permission.READ_EXTERNAL_STORAGE",
-            "android.permission.ACCESS_FINE_LOCATION",
-            "android.permission.CAMERA",
-            "android.permission.RECORD_AUDIO",
-            "android.permission.READ_CONTACTS"
-        )
-
         try {
             val pm = context.packageManager
             val packageInfo: PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -81,36 +80,29 @@ class SecurityAuditor(private val context: Context) {
                 pm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
             }
 
-            val grantedDangerous = mutableListOf<String>()
             val reqPerms = packageInfo.requestedPermissions ?: emptyArray()
-            val flags = packageInfo.requestedPermissionsFlags ?: intArrayOf()
-
-            for (i in reqPerms.indices) {
-                val perm = reqPerms[i]
-                if (perm in dangerousPermissions) {
-                    val isGranted = if (i < flags.size) {
-                        (flags[i] and PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
-                    } else false
-
-                    if (isGranted) {
-                        grantedDangerous.add(perm.substringAfterLast("."))
-                    }
-                }
-            }
+            val grantedDangerous = reqPerms.filter { permission ->
+                val isRuntimeDangerous = runCatching {
+                    val permissionInfo = pm.getPermissionInfo(permission, 0)
+                    (permissionInfo.protectionLevel and android.content.pm.PermissionInfo.PROTECTION_MASK_BASE) ==
+                        android.content.pm.PermissionInfo.PROTECTION_DANGEROUS
+                }.getOrDefault(false)
+                isRuntimeDangerous && pm.checkPermission(permission, packageName) == PackageManager.PERMISSION_GRANTED
+            }.map { it.substringAfterLast(".") }
 
             if (grantedDangerous.isEmpty()) {
                 SecurityTestResult(
                     testName = "فحص الصلاحيات والوصول للملفات المشتركة",
-                    description = "التحقق من عدم منح صلاحيات الوسائط أو المستشعرات",
+                    description = "فحص الأذونات الخطرة وقت التشغيل التي تعلنها الحزمة فقط",
                     isPassed = true,
-                    resultDetails = "ممتاز: التطبيق لا يملك أي صلاحيات وسائط أو تخزين مشترك أو مستشعرات حساسة ممنوحة."
+                    resultDetails = "لم يُعثر على إذن خطِر معلَن وممنوح. لا يشمل ذلك AppOps الخاصة أو وصول الملفات عبر URI أو الأذونات الخاصة في إعدادات النظام."
                 )
             } else {
                 SecurityTestResult(
                     testName = "فحص الصلاحيات والوصول للملفات المشتركة",
-                    description = "الكشف عن الصلاحيات الحساسة الممنوحة في النظام",
+                    description = "الأذونات الخطرة المعلنة والممنوحة فعليًا في هذا الملف",
                     isPassed = false,
-                    resultDetails = "تنبيه: تم رصد صلاحيات حساسة ممنوحة: [${grantedDangerous.joinToString(", ")}]. يُنصح بتجريدها عبر Shizuku أو من إعدادات التطبيق."
+                    resultDetails = "أذونات خطرة ما زالت ممنوحة: [${grantedDangerous.joinToString(", ")}]. حاولت سياسة مالك الملف رفضها، لكن تحقّق من حالة Android لكل إذن."
                 )
             }
         } catch (e: Exception) {
@@ -130,22 +122,22 @@ class SecurityAuditor(private val context: Context) {
         return listOf(
             OsLimitationItem(
                 title = "استقلالية نظام التشغيل (Linux UID & Sandbox)",
-                description = "يعمل كل تطبيق في أندرويد تحت معرّف مستخدم لينكس مستقل (UID) ونطاق SELinux منعزل. لا يمكن لأي تطبيق بدون صلاحيات الروت أو ملف عمل التجسس على ذاكرة تطبيق آخر أو ملفاته الداخلية الخاصة.",
+                description = "يعمل كل تطبيق عادةً تحت UID مستقل؛ لا يمنح IsolateBox وصولًا لذاكرة التطبيقات أو ملفاتها الداخلية الخاصة. هذا ليس فحصًا لذاكرة الهدف، وقد تظل الملفات المشتركة أو الأذونات الممنوحة متاحة.",
                 statusType = "INFO"
             ),
             OsLimitationItem(
                 title = "حدود جدار الحماية VpnService (عزل الشبكة فقط)",
-                description = "تشغيل VpnService يحجب حركة مرور الحزم عبر الشبكة (IPv4/IPv6/DNS) بنسبة 100%، لكنه لا يعزل الملفات أو الذاكرة العشوائية. هذا فصل تقني صريح تفرضه بنية أندرويد.",
+                description = "تُسقط الحزم التي يوجهها Android إلى TUN ما دامت واجهة VPN تعمل. يمنع always-on مع lockdown تجاوزها داخل الملف المدار عند توقفها؛ دون ذلك يكون الحجب محدودًا بحياة الخدمة. DNS المشفر ومحتوى TLS لا يُفك تشفيرهما.",
                 statusType = "CAUTION"
             ),
             OsLimitationItem(
                 title = "دور Shizuku (تجريد الصلاحيات الحساسة عبر ADB)",
-                description = "يوفر Shizuku وصولاً إلى واجهات النظام (AppOps & PM) لتجريد الصلاحيات الحساسة (مثل قراءة الصور، جهات الاتصال، الكاميرا) وفرض الإيقاف الإجباري، ولكنه ليس حاوية تشغيل افتراضية كاملة (Container/VM).",
+                description = "Shizuku ليس root تلقائيًا؛ يعمل بهوية ADB أو root وفق طريقة تشغيله. IsolateBox يعرض حالته فقط ولا ينفذ أوامر shell غير موثقة. لا يحل محل ملف العمل ولا يوفر حاوية أو وصولًا عامًا لبيانات التطبيقات.",
                 statusType = "SHIZUKU"
             ),
             OsLimitationItem(
                 title = "ملف العمل ومستخدمو أندرويد (العزل الفعلي التام للملفات)",
-                description = "للحصول على عزل ملفات وتخزين كامل بنسبة 100%، يعتمد نظام أندرويد رسمياً على Managed Profile (ملف العمل) حيث يتم إنشاء مساحة مشفرة منفصلة كلياً برقم مستخدم جديد (مثل /data/user/10/).",
+                description = "ملف العمل ينشئ مستخدم Android مُدارًا وبيانات تطبيقات منفصلة. يجب تثبيت نسخة الهدف داخل الملف يدويًا؛ لا تُنسخ بيانات النسخة الشخصية، ولا يمثل ذلك عزلًا مطلقًا عن النظام أو عن المستخدم/مالك الجهاز.",
                 statusType = "RECOMMENDED"
             )
         )
@@ -196,7 +188,7 @@ class SecurityAuditor(private val context: Context) {
                             name = rule.name,
                             category = rule.category,
                             signature = rule.patterns.first(),
-                            isNeutralized = true // Neutralized by IsolateBox local firewall & AppOps!
+                            isNeutralized = false // A manifest-name match is not evidence of neutralization.
                         )
                     )
                 }
@@ -205,10 +197,10 @@ class SecurityAuditor(private val context: Context) {
             val count = discovered.size
             val score = (count * 20).coerceAtMost(100)
             val level = when {
-                score == 0 -> "نظيف (لا توجد أدوات تتبع معروفة)"
-                score < 40 -> "منخفض (تتبع تحليلي أساسي)"
-                score < 70 -> "متوسط (أدوات إسناد وتحليل سلوكي)"
-                else -> "شديد التطفل (حزم إعلانات وتتبع مكثفة)"
+                score == 0 -> "لم تُكتشف أنماط معروفة (ليس فحصًا شاملًا)"
+                score < 40 -> "عدد قليل من الأنماط المعروفة في أسماء المكونات"
+                score < 70 -> "عدة أنماط أسماء معروفة؛ يلزم فحص مستقل"
+                else -> "أنماط عديدة في أسماء المكونات؛ النتيجة ليست تقديرًا لاحتمال التتبع"
             }
 
             com.example.model.IntrusionReport(

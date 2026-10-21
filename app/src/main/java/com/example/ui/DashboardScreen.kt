@@ -82,6 +82,7 @@ fun DashboardScreen(
     onSettingsClick: (SandboxedApp) -> Unit,
     onDiagnosticsClick: (SandboxedApp) -> Unit,
     onOpenVaultClick: () -> Unit,
+    onSetupWorkProfile: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -135,6 +136,8 @@ fun DashboardScreen(
                     ActiveSessionBanner(
                         session = activeSession,
                         totalBlocked = totalBlockedPackets,
+                        vpnActive = firewallActive,
+                        lockdownActive = workProfileStatus.networkLockdownEnabled,
                         onStopClick = { onStopApp(activeSession.packageName) }
                     )
                 }
@@ -184,23 +187,35 @@ fun DashboardScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = if (firewallActive) "يحجب حركة الإنترنت (IPv4/IPv6/DNS) محلياً" else "متوقف: اضغط لتفعيل الحماية الاستباقية",
+                                        text = when {
+                                            firewallActive && workProfileStatus.networkLockdownEnabled -> "VPN دائم مع قفل المرور؛ ${totalBlockedPackets} حزمة قرأها TUN"
+                                            firewallActive -> "حجب محلي ما دامت الخدمة فعالة؛ ${totalBlockedPackets} حزمة قرأها TUN"
+                                            workProfileStatus.isProfileOwner && workProfileStatus.networkLockdownEnabled -> "TUN غير نشط؛ قفل Android ما زال يمنع المرور غير المار عبر VPN. قد تتأثر تطبيقات الملف الأخرى."
+                                            else -> "متوقف: لا يوجد حجب نشط الآن"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
 
-                            Button(
-                                onClick = onToggleFirewall,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (firewallActive) CyberEmerald.copy(alpha = 0.2f) else CyberCyanDark,
-                                    contentColor = if (firewallActive) CyberEmerald else Color.White
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.testTag("firewall_toggle_button")
-                            ) {
-                                Text(if (firewallActive) "نشط" else "تشغيل")
+                            if (workProfileStatus.isProfileOwner && workProfileStatus.networkLockdownEnabled) {
+                                NeonStatusChip(
+                                    text = if (firewallActive) "قفل دائم" else "قفل DPC؛ TUN غير نشط",
+                                    color = if (firewallActive) CyberEmerald else CyberAmber
+                                )
+                            } else {
+                                Button(
+                                    onClick = onToggleFirewall,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (firewallActive) CyberEmerald.copy(alpha = 0.2f) else CyberCyanDark,
+                                        contentColor = if (firewallActive) CyberEmerald else Color.White
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.testTag("firewall_toggle_button")
+                                ) {
+                                    Text(if (firewallActive) "إيقاف" else "تشغيل")
+                                }
                             }
                         }
                     }
@@ -248,15 +263,15 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "تكامل Shizuku (صلاحيات ADB)",
+                                        text = "حالة Shizuku (اختياري، دون أوامر تلقائية)",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = when (shizukuState) {
-                                            ShizukuState.CONNECTED -> "متصل: تجريد الصلاحيات الحساسة والإيقاف الإجباري مدعوم"
-                                            ShizukuState.PERMISSION_REQUIRED -> "يتطلب منح الإذن من خلال واجهة Shizuku"
-                                            ShizukuState.SERVICE_NOT_RUNNING -> "الخدمة غير مشغلة: يعمل في الوضع المحدود"
+                                            ShizukuState.CONNECTED -> "Binder متصل ومصرح؛ لا ينفذ التطبيق أوامر shell عبره"
+                                            ShizukuState.PERMISSION_REQUIRED -> "خدمة Shizuku نشطة؛ يلزم إذن المستخدم قبل أي استخدام"
+                                            ShizukuState.SERVICE_NOT_RUNNING -> "غير متصل؛ VPN وملف العمل لا يعتمدان عليه"
                                             ShizukuState.UNSUPPORTED -> "غير مدعوم على هذه البيئة"
                                         },
                                         style = MaterialTheme.typography.bodySmall,
@@ -265,13 +280,13 @@ fun DashboardScreen(
                                 }
                             }
 
-                            if (shizukuState == ShizukuState.PERMISSION_REQUIRED || shizukuState == ShizukuState.SERVICE_NOT_RUNNING) {
+                            if (shizukuState == ShizukuState.PERMISSION_REQUIRED) {
                                 OutlinedButton(
                                     onClick = onRequestShizuku,
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.testTag("request_shizuku_button")
                                 ) {
-                                    Text("ربط")
+                                    Text("طلب الإذن")
                                 }
                             } else if (shizukuState == ShizukuState.CONNECTED) {
                                 NeonStatusChip(text = "جاهز", color = CyberEmerald)
@@ -311,10 +326,24 @@ fun DashboardScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            NeonStatusChip(
-                                text = if (workProfileStatus.hasWorkProfile) "مفعل" else "متاح نظامياً",
-                                color = if (workProfileStatus.hasWorkProfile) CyberEmerald else CyberBlue
-                            )
+                            if (workProfileStatus.isProfileOwner && workProfileStatus.networkLockdownEnabled) {
+                                NeonStatusChip(text = "Lockdown فعال", color = CyberEmerald)
+                            } else if (workProfileStatus.canProvisionManagedProfile) {
+                                Button(
+                                    onClick = onSetupWorkProfile,
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyanDark),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) { Text("إعداد ملف العمل", color = Color.White) }
+                            } else {
+                                NeonStatusChip(
+                                    text = when {
+                                        workProfileStatus.isProfileOwner -> "تهيئة مطلوبة"
+                                        workProfileStatus.hasWorkProfile -> "افتح نسخة الحقيبة"
+                                        else -> "غير متاح"
+                                    },
+                                    color = if (workProfileStatus.hasWorkProfile) CyberAmber else CyberBlue
+                                )
+                            }
                         }
                     }
                 }
@@ -328,7 +357,7 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "التطبيقات داخل البيئة (${sandboxedApps.size})",
+                        text = "تطبيقات مسجلة في IsolateBox (${sandboxedApps.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -375,7 +404,7 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "اختر أي تطبيق مثبت على هاتفك لتشغيله في بيئة معزولة بحماية جدار الحماية وتجريد الأذونات الحساسة.",
+                                text = "أضف التطبيقات المثبتة في الملف الحالي فقط. العزل يتطلب فتح نسخة IsolateBox ذات رمز الحقيبة داخل ملف العمل؛ النسخة الشخصية لا تعزل ملفات التطبيقات.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -461,7 +490,7 @@ fun SandboxedAppItemCard(
                         )
                         if (isRunning) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            NeonStatusChip(text = "يعمل حالياً", color = CyberEmerald)
+                            NeonStatusChip(text = "جلسة مفتوحة", color = CyberEmerald)
                         }
                     }
                     Text(
@@ -504,13 +533,7 @@ fun SandboxedAppItemCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (app.blockAllNetwork) {
-                    NeonStatusChip(text = "الإنترنت محجوب", color = CyberRed)
-                }
-                if (app.restrictMediaAccess) {
-                    NeonStatusChip(text = "الوسائط مقيدة", color = CyberAmber)
-                }
-                if (app.revokeLocation) {
-                    NeonStatusChip(text = "الموقع معزول", color = CyberBlue)
+                    NeonStatusChip(text = "قاعدة: حجب الشبكة", color = CyberRed)
                 }
             }
 
@@ -549,7 +572,7 @@ fun SandboxedAppItemCard(
                     ) {
                         Icon(imageVector = Icons.Default.Stop, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "إيقاف", fontWeight = FontWeight.Bold)
+                        Text(text = "تعليق", fontWeight = FontWeight.Bold)
                     }
                 }
             }
