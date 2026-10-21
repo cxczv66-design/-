@@ -189,7 +189,7 @@ fun DiagnosticsScreen(
             if (intrusionReport != null) {
                 item {
                     Text(
-                        text = "رادار التتبع وكشف أدوات التجسس (Tracker Radar)",
+                        text = "أنماط SDK معروفة في أسماء المكونات (فحص محدود)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = CyberAmber
@@ -205,7 +205,7 @@ fun DiagnosticsScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "مؤشر التطفل والتحليلات: ${intrusionReport.score}%",
+                                    text = "مؤشر داخلي للأنماط (ليس نسبة): ${intrusionReport.score}/100",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if (intrusionReport.score > 40) CyberRed else CyberEmerald
@@ -217,8 +217,8 @@ fun DiagnosticsScreen(
                                 )
                             }
                             NeonStatusChip(
-                                text = "محايدة بجدار الحماية",
-                                color = CyberEmerald
+                                text = "كشف أسماء فقط؛ لم يثبت التعطيل",
+                                color = CyberAmber
                             )
                         }
 
@@ -242,7 +242,7 @@ fun DiagnosticsScreen(
                                             Text(tracker.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                             Text(tracker.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
-                                        NeonStatusChip(text = "تم تعطيل الاتصال", color = CyberEmerald)
+                                        NeonStatusChip(text = "مطابقة اسم؛ لم يُختبر الاتصال", color = CyberAmber)
                                     }
                                 }
                             }
@@ -255,7 +255,7 @@ fun DiagnosticsScreen(
             if (testResults.isNotEmpty()) {
                 item {
                     Text(
-                        text = "نتائج الفحص والتحقق الفعلي",
+                        text = "نتائج حالة الإعداد والأدلة المرصودة",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan
@@ -367,7 +367,7 @@ fun DiagnosticsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "سجل جدار الحماية وDNS المباشر (DPI)",
+                        text = "عينات الحزم التي التقطها VPN المحلي",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan
@@ -384,7 +384,7 @@ fun DiagnosticsScreen(
             if (firewallLogs.isEmpty()) {
                 item {
                     Text(
-                        text = "لا توجد حزم محجوبة مسجلة حالياً. عند تشغيل أي تطبيق معزول ومحاولته الاتصال أو طلب نطاقات DNS، ستظهر الحزم المسقطة هنا.",
+                        text = "لا توجد عينات بعد. يظهر سجل محدود للعناوين والاتصالات التي قرأها TUN، وقد يظهر اسم النطاق فقط لاستعلام DNS غير المشفر. لا تُفك حماية TLS ولا تُعرض محتويات التطبيق.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

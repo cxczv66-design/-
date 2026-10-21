@@ -169,9 +169,9 @@ class IsolateBoxViewModel(application: Application) : AndroidViewModel(applicati
                 }
 
                 val notice = when (rating) {
-                    CompatibilityRating.LIMITED -> "تطبيق نظام أساسي: ينصح بعدم حجب خدمات النظام الحرجة"
-                    CompatibilityRating.GOOD -> "متوافق بالكامل: يدعم حجب الشبكة وتجريد الأذونات الحساسة"
-                    CompatibilityRating.EXCELLENT -> "توافق مثالي: بيئة عزل قياسية بدون تعارضات"
+                    CompatibilityRating.LIMITED -> "حزمة نظام؛ لا تضفها قبل فهم أثر تعليقها وحجب شبكتها"
+                    CompatibilityRating.GOOD -> "يطلب أذونات حساسة؛ قد تتعطل ميزات بعد تطبيق سياسة الرفض"
+                    CompatibilityRating.EXCELLENT -> "لم تُرصد الأذونات المحددة؛ هذا ليس اختبار توافق أو ضمان أمان"
                 }
 
                 appItems.add(
@@ -200,6 +200,7 @@ class IsolateBoxViewModel(application: Application) : AndroidViewModel(applicati
 
     fun addAppToSandbox(item: InstalledAppItem) {
         viewModelScope.launch(Dispatchers.IO) {
+            if (item.isSystemApp) return@launch
             val sandboxed = SandboxedApp(
                 packageName = item.packageName,
                 appName = item.appName,
@@ -214,9 +215,11 @@ class IsolateBoxViewModel(application: Application) : AndroidViewModel(applicati
                 revokeLocation = true,
                 revokeCameraMic = true,
                 revokeContactsCalendar = true,
-                revokeBackgroundRun = true
+                blockBackgroundRun = true
             )
             db.sandboxedAppDao().insertApp(sandboxed)
+            WorkProfileHelper.applyProfileDataRestrictions(context = getApplication())
+            WorkProfileHelper.denySensitiveRuntimePermissions(getApplication(), item.packageName)
             FirewallController.reloadRules(getApplication())
         }
     }
@@ -258,6 +261,7 @@ class IsolateBoxViewModel(application: Application) : AndroidViewModel(applicati
     fun toggleFirewall() {
         val context: Context = getApplication()
         if (firewallActive.value) {
+            if (WorkProfileHelper.isLockdownEnabled(context)) return
             FirewallController.stopFirewall(context)
         } else {
             FirewallController.startFirewall(context)
@@ -308,31 +312,6 @@ class IsolateBoxViewModel(application: Application) : AndroidViewModel(applicati
     fun runTrackerAnalysis(packageName: String) {
         viewModelScope.launch {
             _intrusionReport.value = securityAuditor.analyzeAppTrackers(packageName)
-        }
-    }
-
-    fun panicWipe(packageName: String) {
-        viewModelScope.launch {
-            appLaunchPipeline.panicWipe(packageName)
-            // Reload apps and logs
-            val app = db.sandboxedAppDao().getAppByPackage(packageName)
-            if (app != null) {
-                _selectedApp.value = app.copy(isFrozen = true)
-            }
-        }
-    }
-
-    fun toggleFreeze(app: SandboxedApp) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val willFreeze = !app.isFrozen
-            if (willFreeze) {
-                ShizukuManager.suspendPackage(app.packageName)
-            } else {
-                ShizukuManager.unsuspendPackage(app.packageName)
-            }
-            val updated = app.copy(isFrozen = willFreeze)
-            db.sandboxedAppDao().updateApp(updated)
-            _selectedApp.value = updated
         }
     }
 
